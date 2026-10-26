@@ -1,0 +1,20 @@
+package io.github.codexpocket.app;
+import org.json.JSONObject;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+/** Bounded RFC-8259 syntax and duplicate-key gate before Android's JSONObject parser. */
+final class StrictJson {
+ static String utf8(byte[] bytes)throws Exception{return StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT).onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString();}
+ static JSONObject object(String raw,int limit)throws Exception{if(raw==null||raw.getBytes(StandardCharsets.UTF_8).length>limit)throw new IllegalArgumentException("JSON too large");Scanner s=new Scanner(raw);s.value(0);s.space();if(s.at!=raw.length())throw new IllegalArgumentException("Trailing JSON");return new JSONObject(raw);}
+ private static final class Scanner {
+  final String raw;int at,nodes;Scanner(String value){raw=value;}
+  void space(){while(at<raw.length()&&" \n\r\t".indexOf(raw.charAt(at))>=0)at++;}
+  void expect(char c){space();if(at>=raw.length()||raw.charAt(at++)!=c)throw new IllegalArgumentException("Invalid JSON");}
+  void value(int depth){space();if(depth>16||++nodes>2048||at>=raw.length())throw new IllegalArgumentException("JSON bound");char c=raw.charAt(at);if(c=='{'){at++;Set<String> names=new HashSet<>();space();if(take('}'))return;do{String name=string();if(!names.add(name))throw new IllegalArgumentException("Duplicate JSON key");expect(':');value(depth+1);space();if(take('}'))return;expect(',');}while(true);}else if(c=='['){at++;space();if(take(']'))return;do{value(depth+1);space();if(take(']'))return;expect(',');}while(true);}else if(c=='"')string();else if(c=='t')literal("true");else if(c=='f')literal("false");else if(c=='n')literal("null");else number();}
+  boolean take(char c){if(at<raw.length()&&raw.charAt(at)==c){at++;return true;}return false;}
+  void literal(String value){if(!raw.startsWith(value,at))throw new IllegalArgumentException("Invalid literal");at+=value.length();}
+  void number(){int start=at;if(take('-')){}if(take('0')){if(at<raw.length()&&Character.isDigit(raw.charAt(at)))throw new IllegalArgumentException("Leading zero");}else{digits(true);}if(take('.'))digits(false);if(take('e')||take('E')){if(take('+')||take('-')){}digits(false);}if(at==start||!Double.isFinite(Double.parseDouble(raw.substring(start,at))))throw new IllegalArgumentException("Invalid number");}
+  void digits(boolean nonzero){int start=at;if(nonzero&&(at>=raw.length()||raw.charAt(at)<'1'||raw.charAt(at)>'9'))throw new IllegalArgumentException("Invalid number");while(at<raw.length()&&raw.charAt(at)>='0'&&raw.charAt(at)<='9')at++;if(at==start)throw new IllegalArgumentException("Invalid number");}
+  String string(){space();if(!take('"'))throw new IllegalArgumentException("Expected string");StringBuilder value=new StringBuilder();boolean closed=false;while(at<raw.length()){char c=raw.charAt(at++);if(c=='"'){closed=true;break;}if(c<32)throw new IllegalArgumentException("Control character");if(c=='\\'){if(at>=raw.length())throw new IllegalArgumentException("Invalid escape");char e=raw.charAt(at++);c=switch(e){case '"','\\','/'->e;case 'b'->'\b';case 'f'->'\f';case 'n'->'\n';case 'r'->'\r';case 't'->'\t';case 'u'->{if(at+4>raw.length())throw new IllegalArgumentException("Unicode escape");int hex=0;for(int i=0;i<4;i++){char h=raw.charAt(at++);int digit=h>='0'&&h<='9'?h-'0':h>='a'&&h<='f'?h-'a'+10:h>='A'&&h<='F'?h-'A'+10:-1;if(digit<0)throw new IllegalArgumentException("Unicode escape");hex=(hex<<4)|digit;}yield(char)hex;}default->throw new IllegalArgumentException("Invalid escape");};}value.append(c);}if(!closed)throw new IllegalArgumentException("Unclosed string");for(int i=0;i<value.length();i++){char c=value.charAt(i);if(Character.isHighSurrogate(c)){if(++i>=value.length()||!Character.isLowSurrogate(value.charAt(i)))throw new IllegalArgumentException("Unicode surrogate");}else if(Character.isLowSurrogate(c))throw new IllegalArgumentException("Unicode surrogate");}return value.toString();}
+ }
+}

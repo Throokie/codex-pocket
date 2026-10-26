@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="color-scheme" content="dark light">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: http:; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'">
+<title>Codex Pocket</title>
+<link rel="stylesheet" href="./style.css">
+<script type="module" src="./app.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+<header class="topbar">
+<button class="iconbtn" id="menu" aria-label="会话列表"></button>
+<div class="heading"><strong id="title">总控</strong><span id="connection"><i class="dot gray"></i>正在连接…</span></div>
+<button class="iconbtn" id="refresh" aria-label="更新状态"></button>
+<button class="iconbtn" id="settings" aria-label="设置"></button>
+</header>
+<div class="offlinebar" id="offlinebar" hidden></div>
+<button class="pending-strip" id="pending-strip" hidden><span id="pending-icon"></span><b id="pending-label"></b><small>查看全部</small><span id="pending-arrow"></span></button>
+<main class="page" id="page" aria-live="polite"></main>
+<div class="composer-area" id="composer-area" hidden>
+<form class="composer" id="composer">
+<div id="attachments"></div>
+<textarea id="prompt" rows="1" maxlength="24000" placeholder="给总控发消息…" aria-label="给总控发消息"></textarea>
+<div class="composer-bottom"><button type="button" class="iconbtn" id="attach" aria-label="添加图片"></button><span class="model-label" id="send-target">发给总控</span><button type="submit" class="iconbtn send" id="send" aria-label="发送消息"></button></div>
+</form>
+<div class="composer-hint" id="composer-hint">消息交给电脑上的总控会话处理</div>
+</div>
+<nav class="bottomnav" id="bottomnav" aria-label="主导航"></nav>
+<div class="home-indicator"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="sheetback" id="sheetback" hidden><section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="操作面板"></section></div>
+<div class="imageviewer" id="viewer" hidden><div class="viewerbar"><button class="iconbtn" id="viewer-close" aria-label="关闭图片"></button><span>图片</span><button class="iconbtn" id="zoom" aria-label="切换缩放"></button></div><div class="viewerimage"><img id="viewer-img" alt="放大图片"></div><div class="viewerbottom">点击图片或右上角可放大</div></div>
+<input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+</div>
+</body>
+</html>

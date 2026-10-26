@@ -1,0 +1,78 @@
+name: Android checks
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  java-counterexamples:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up JDK 21
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch the test-only Android JSON implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          json_jar="$RUNNER_TEMP/android-json.jar"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            'https://repo.maven.apache.org/maven2/com/vaadin/external/google/android-json/0.0.20131108.vaadin1/android-json-0.0.20131108.vaadin1.jar' \
+            --output "$json_jar"
+          printf '%s  %s\n' 'dfb7bae2f404cfe0b72b4d23944698cb716b7665171812a0a4d0f5926c0fac79' "$json_jar" | sha256sum --check --strict
+          printf 'POCKET_JSON_JAR=%s\n' "$json_jar" >> "$GITHUB_ENV"
+          printf 'POCKET_TEST_OUT=%s\n' "$RUNNER_TEMP/pocket-java-tests" >> "$GITHUB_ENV"
+      - name: Run production Java counterexamples
+        run: bash app/android/tests/run-java-tests.sh
+
+  debug-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up JDK 21
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - name: Install the pinned Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          # compileSdk=37 resolves the published base platform package android-37.0.
+          # AGP 9.4 defaults to Build Tools 36; the project also documents Build Tools 37.
+          sdkmanager --install 'platforms;android-37.0' 'build-tools;36.0.0' 'build-tools;37.0.0'
+      - name: Build a disposable CI debug APK
+        shell: bash
+        env:
+          POCKET_DEBUG_KEYSTORE: ${{ runner.temp }}/pocket-ci-debug.keystore
+        run: |
+          set -euo pipefail
+          chmod +x app/android/gradlew
+          bash app/android/build-apk.sh --stacktrace
+      - name: Remove disposable signing material
+        if: always()
+        shell: bash
+        run: rm -f -- "$RUNNER_TEMP/pocket-ci-debug.keystore"
+      # Intentionally no upload-artifact, release action or production signing secret.
