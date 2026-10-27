@@ -37,10 +37,11 @@ py -3 -m venv pocket-env
 - `codex-pocket --version`：与安装元数据核对版本。
 - `codex-pocket doctor --json --data PATH`：只读检查平台能力及指定目录的元数据；不创建目录、不读凭据、不连接桌面。`implemented-unverified` 表示实现路线存在，不表示当前桌面已验收。
 
-不带 `--data` 时，`doctor` 与 `serve` 一样使用当前目录的 `./.local`，并不会检查示例中另选的数据目录。`data_directory.state` 为 `insecure` 时，可能是类型、属主或权限问题。只有本人拥有的真实目录仅权限过宽时，`serve` 才会收紧为 0700 后启动；符号链接、非目录或属主不符都会被拒绝。Windows 上 `data_directory` 固定为 `unsupported`，因为没有可用的私有文件方案。
 
 - `codex-pocket serve --help`：查看服务参数。Windows 会在进入服务逻辑前报告不支持。
 - `codex-pocket manager`：Linux/macOS 打开已运行服务的本机管理页，不打印管理链接。
+
+不带 `--data` 时，`doctor` 与 `serve` 一样使用当前目录的 `./.local`，并不会检查示例中另选的数据目录。`data_directory.state` 为 `insecure` 时，可能是类型、属主或权限问题。只有本人拥有的真实目录仅权限过宽时，`serve` 才会收紧为 0700 后启动；符号链接、非目录或属主不符都会被拒绝。Windows 上 `data_directory` 固定为 `unsupported`，因为没有可用的私有文件方案。
 
 Windows 上 `doctor` 可运行，但 `codex-pocket serve` 以退出码 **3** 拒绝启动，且不创建数据目录（源码方式 `python -m server` 同样拒绝，退出码为 1）。这是当前明确限制：Windows 上安装成功不代表可以使用。
 
@@ -70,6 +71,8 @@ POCKET_DATA="$HOME/.local/share/codex-pocket" pocket-env/bin/codex-pocket manage
 安装工作流在构建机生成同一份 wheel 和 sdist，核资源完整及 sdist 重建一致性；三种系统、两种 Python 版本分别在新虚拟环境安装，在仓库目录外运行检查，避免误导入源码。
 
 Linux/macOS 冒烟仅启动隔离的 loopback 服务，桌面入口、工具临时目录全部指向测试空间，确认未连接桌面时消息能力关闭、私有文件为 0600。Windows 验证能安装与诊断，且服务拒绝发生在任何私有状态创建前。任何一项都不能代替真实桌面收发或审批验收。
+
+本轮三种系统的 Python 3.11 / 3.14 安装检查均已通过，详见[该次验证](https://github.com/Throokie/codex-pocket/actions/runs/40473459493)（源码提交 `c086fe3c51cf48c180027047fc02b02909f5d9f4`）。Windows 仅安装和拒绝路径，不能实际使用服务。
 
 运行记录：[Package installation checks](https://github.com/Throokie/codex-pocket/actions/workflows/installable-package.yml)。本轮不发布到 PyPI，不使用正式签名证书，不改动 0.4.0 已发布包。
 
