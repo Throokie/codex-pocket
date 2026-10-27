@@ -3,12 +3,12 @@ import base64
 import hashlib
 import ipaddress
 import json
-import os
 import re
 from urllib.parse import urlsplit
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from .store import Fault
+from .private_files import require_posix, ensure_private_dir, create_private, read_private, replace_private
 
 
 def canonical_origin(value, allow_http=False):
@@ -57,16 +57,16 @@ def endpoints(values, primary=None, allow_http=False):
 
 class ServerIdentity:
     def __init__(self,directory):
+        require_posix()
+        directory=ensure_private_dir(directory)
         path=directory/'server-identity.pem'
         if not path.exists():
             key=ec.generate_private_key(ec.SECP256R1())
             raw=key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption())
             try:
-                fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
-                with os.fdopen(fd,'wb') as f:f.write(raw)
+                create_private(path,raw)
             except FileExistsError:pass
-        if path.is_symlink() or path.stat().st_mode&0o077:raise RuntimeError('服务身份文件必须为本机私有文件')
-        self.key=serialization.load_pem_private_key(path.read_bytes(),password=None)
+        self.key=serialization.load_pem_private_key(read_private(path),password=None)
         if not isinstance(self.key,ec.EllipticCurvePrivateKey) or not isinstance(self.key.curve,ec.SECP256R1):raise RuntimeError('服务身份类型无效')
         raw=self.key.public_key().public_bytes(serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
         self.public_key=base64.b64encode(raw).decode();self.id=hashlib.sha256(raw).hexdigest()
@@ -84,26 +84,25 @@ class ServerIdentity:
 class ServerTLS:
     """Dedicated TLS key, pinned by QR. Never replaces public/system TLS trust."""
     def __init__(self,directory):
+        require_posix()
         import datetime
         import ssl
         from cryptography import x509
         from cryptography.x509.oid import NameOID,ExtendedKeyUsageOID
+        directory=ensure_private_dir(directory)
         self.directory=directory
         keypath=directory/'server-tls-key.pem';certpath=directory/'server-tls-cert.pem'
         if not keypath.exists():
             key=ec.generate_private_key(ec.SECP256R1())
             try:
-                fd=os.open(keypath,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
-                with os.fdopen(fd,'wb') as f:f.write(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()))
+                create_private(keypath,key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()))
             except FileExistsError:pass
-        if keypath.is_symlink() or keypath.stat().st_mode&0o077:raise RuntimeError('TLS密钥必须为本机私有文件')
-        key=serialization.load_pem_private_key(keypath.read_bytes(),None)
+        key=serialization.load_pem_private_key(read_private(keypath),None)
         if not isinstance(key,ec.EllipticCurvePrivateKey) or not isinstance(key.curve,ec.SECP256R1):raise RuntimeError('TLS密钥类型无效')
         public=key.public_key().public_bytes(serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
         self.spki=hashlib.sha256(public).hexdigest();now=datetime.datetime.now(datetime.timezone.utc);renew=True
         if certpath.exists():
-            if certpath.is_symlink() or certpath.stat().st_mode&0o077:raise RuntimeError('TLS证书文件权限无效')
-            cert=x509.load_pem_x509_certificate(certpath.read_bytes())
+            cert=x509.load_pem_x509_certificate(read_private(certpath))
             if cert.public_key().public_bytes(serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)!=public:raise RuntimeError('TLS证书与密钥不匹配，需恢复原备份')
             renew=cert.not_valid_after_utc<now+datetime.timedelta(days=30)
         if renew:
@@ -114,10 +113,7 @@ class ServerTLS:
                 .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]),critical=False)
                 .add_extension(x509.SubjectAlternativeName([x509.DNSName('codex-pocket.local'),x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]),critical=False)
                 .sign(key,hashes.SHA256()))
-            temporary=directory/('tls-cert-'+os.urandom(8).hex()+'.tmp')
-            fd=os.open(temporary,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
-            with os.fdopen(fd,'wb') as f:f.write(cert.public_bytes(serialization.Encoding.PEM))
-            os.replace(temporary,certpath)
+            replace_private(certpath,cert.public_bytes(serialization.Encoding.PEM))
         self.context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         self.context.minimum_version=ssl.TLSVersion.TLSv1_2
         self.context.options|=ssl.OP_NO_COMPRESSION

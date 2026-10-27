@@ -169,6 +169,7 @@ def test_old_database_schema_is_migrated_without_invalidating_old_pairings(tmp_p
     db=sqlite3.connect(tmp_path/'pocket.sqlite3')
     db.execute("CREATE TABLE pairings(id TEXT PRIMARY KEY,ticket_hash TEXT UNIQUE NOT NULL,expires_at REAL NOT NULL,status TEXT NOT NULL DEFAULT 'issued',poll_hash TEXT,nonce_hash TEXT,device_name TEXT,phrase TEXT,device_id TEXT,token_envelope TEXT)")
     db.commit();db.close()
+    (tmp_path/'pocket.sqlite3').chmod(0o600)
     store=Store(tmp_path)
     try:
         assert 'config_id' in {row['name'] for row in store.db.execute('pragma table_info(pairings)')}

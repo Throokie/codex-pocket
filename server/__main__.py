@@ -7,23 +7,26 @@ from pathlib import Path
 from aiohttp import web
 from .app import Hub, create_app, create_admin_app
 from . import __version__
+from .resources import web_root
+from .platform_support import require_supported
+from .private_files import ensure_private_dir, create_private, read_private, replace_private
 
 
 async def run(args):
+    require_supported()
     from adapters.desktop import DesktopAdapter
-    directory=Path(args.data).expanduser().resolve()
-    directory.mkdir(parents=True,mode=0o700,exist_ok=True)
+    directory=ensure_private_dir(Path(args.data).expanduser())
     tokenfile=directory/'admin-token'
-    if not tokenfile.exists():
-        fd=os.open(tokenfile,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
-        with os.fdopen(fd,'w') as f:f.write(secrets.token_urlsafe(40))
-    token=tokenfile.read_text().strip()
+    try:
+        create_private(tokenfile,secrets.token_urlsafe(40).encode())
+    except FileExistsError:
+        pass
+    token=read_private(tokenfile).decode().strip()
     adapter=DesktopAdapter(caller_thread_id=args.caller_thread or args.controller, ipc_path=args.ipc)
     hub=Hub(directory,adapter,args.controller,args.name)
     hub.outbound_media_roots=[Path(p).expanduser().resolve() for p in args.media_root]
     await hub.start()
-    root=Path(__file__).resolve().parents[1]
-    public=web.AppRunner(create_app(hub,root/'app/web'),access_log=None)
+    public=web.AppRunner(create_app(hub,web_root()),access_log=None)
     admin=web.AppRunner(create_admin_app(hub,token),access_log=None)
     await public.setup();await admin.setup()
     site=web.TCPSite(public,args.bind,args.port)
@@ -39,8 +42,7 @@ async def run(args):
             await automatic.set_excluded_interfaces(args.exclude_interface)
         await automatic.start()
     link=directory/'本机管理链接.txt'
-    link.write_text('http://127.0.0.1:'+str(args.admin_port)+'/#token='+token+'\n')
-    os.chmod(link,0o600)
+    replace_private(link,('http://127.0.0.1:'+str(args.admin_port)+'/#token='+token+'\n').encode())
     print(f'Codex Pocket {__version__} 已启动，API {args.bind}:{args.port}；本机管理链接保存在 {link}',flush=True)
     print('非官方客户端。请勿将管理端口映射到公网；手机只连接API端口。',flush=True)
     stop=asyncio.Event()
@@ -56,7 +58,11 @@ async def run(args):
         await public.cleanup();await admin.cleanup();await hub.close()
 
 
-def main():
+def main(argv=None):
+    try:
+        require_supported()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from None
     parser=argparse.ArgumentParser(description='Codex Pocket 自托管会话桥（非官方）')
     parser.add_argument('--data',default='.local')
     parser.add_argument('--bind',default='127.0.0.1')
@@ -70,7 +76,7 @@ def main():
     parser.add_argument('--ipc',default=None,help='可选桌面IPC路径，默认本用户Codex目录')
     parser.add_argument('--name',default='我的电脑')
     parser.add_argument('--media-root',action='append',default=[],help='允许回传图片的目录，严格白名单，可重复')
-    args=parser.parse_args()
+    args=parser.parse_args(argv)
     args.caller_thread=args.caller_thread or args.controller or os.environ.get('CODEX_THREAD_ID')
     if not args.caller_thread:parser.error('需要 --caller-thread（有效本机Codex会话ID）；可与 --controller 相同')
     if not 1<=args.tls_port<=65535:parser.error('TLS端口必须为1至65535')

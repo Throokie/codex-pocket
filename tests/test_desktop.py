@@ -105,7 +105,8 @@ class Adapter(mod.DesktopAdapter):
 
 class Tests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='pocket-ipc-test-')
+        # macOS TMPDIR can exceed AF_UNIX's pathname budget; keep only fixtures short.
+        self.tmp = tempfile.TemporaryDirectory(prefix='pocket-ipc-', dir='/tmp')
         self.fake = FakeDesktop(str(Path(self.tmp.name) / 'ipc.sock'))
         await self.fake.start()
         self.changed = 0

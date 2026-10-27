@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codex-pocket"
+dynamic = ["version"]
+description = "Unofficial mobile bridge for an existing Codex desktop"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Throokie"}]
+dependencies = [
+  "aiohttp==3.14.5",
+  "cryptography==50.0.2",
+  "Pillow==13.0.0",
+  "qrcode==8.2",
+  "zeroconf==0.151.5",
+]
+
+[project.urls]
+Repository = "https://github.com/Throokie/codex-pocket"
+Issues = "https://github.com/Throokie/codex-pocket/issues"
+
+[project.scripts]
+codex-pocket = "server.cli:main"
+
+[tool.hatch.version]
+path = "server/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server", "adapters"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"THIRD_PARTY_NOTICES.md" = "server/THIRD_PARTY_NOTICES.md"
+"app/web/index.html" = "server/web/index.html"
+"app/web/app.js" = "server/web/app.js"
+"app/web/icons.js" = "server/web/icons.js"
+"app/web/style.css" = "server/web/style.css"
+"app/web/transport.js" = "server/web/transport.js"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/pyproject.toml",
+  "/README.md",
+  "/LICENSE",
+  "/THIRD_PARTY_NOTICES.md",
+  "/requirements.txt",
+  "/server",
+  "/adapters",
+  "/app/web",
+  "/third_party",
+]
+exclude = ["**/__pycache__", "**/*.pyc", "**/*.db", "**/*.sqlite*", "**/*.key", "**/*.pem", "**/*.keystore"]
