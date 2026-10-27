@@ -16,6 +16,7 @@ import tempfile
 import json
 import os
 import stat
+import sys
 import struct
 import time
 import uuid
@@ -50,6 +51,8 @@ def _json(value: Any) -> bytes:
 
 
 def _safe_socket(path: str) -> bool:
+    if sys.platform == "win32" or not hasattr(os, "getuid"):
+        return False
     try:
         info = os.lstat(path)
         directory = os.lstat(os.path.dirname(path))
@@ -58,6 +61,18 @@ def _safe_socket(path: str) -> bool:
                 and not directory.st_mode & 0o022)
     except OSError:
         return False
+
+
+async def _open_local_socket(path: str):
+    """Keep pathname limits with the OS; never truncate or fall back to TCP."""
+    if sys.platform == "win32" or not hasattr(os, "getuid"):
+        raise DesktopError("desktop_unavailable", "Windows 桌面连接暂不支持")
+    if not _safe_socket(path):
+        raise DesktopError("desktop_unavailable", "未找到安全的 Codex 桌面连接")
+    try:
+        return await asyncio.open_unix_connection(path)
+    except (OSError, ValueError):
+        raise DesktopError("desktop_unavailable", "Codex 桌面连接不可用") from None
 
 
 def _visible_messages(result: dict, limit: int) -> list[dict]:
@@ -176,6 +191,8 @@ class DesktopAdapter:
         self.last_error: str | None = None
 
     async def start(self, on_change: Callable[[], Awaitable[None]]) -> None:
+        if sys.platform == "win32" or not hasattr(os, "getuid"):
+            raise DesktopError("desktop_unavailable", "Windows 桌面连接暂不支持")
         if self._tasks:
             return
         self._callback = on_change
@@ -327,9 +344,7 @@ class DesktopAdapter:
         delay = .5
         while not self._closed:
             try:
-                if not _safe_socket(self.ipc_path):
-                    raise DesktopError("desktop_unavailable", "未找到安全的 Codex 桌面连接")
-                self._reader, self._writer = await asyncio.open_unix_connection(self.ipc_path)
+                self._reader, self._writer = await _open_local_socket(self.ipc_path)
                 self._client_id = "initializing-client"
                 self._epoch = uuid.uuid4().hex
                 self._owners.clear()
@@ -704,6 +719,8 @@ class DesktopAdapter:
             await self._notify()
 
     def _pipe_paths(self) -> list[str]:
+        if sys.platform == "win32" or not hasattr(os, "getuid"):
+            return []
         paths = [self.tools_pipe, os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")]
         # Enumerate only same-user socket metadata, never whole /proc environments or auth files.
         directory = Path(tempfile.gettempdir()) / "codex-app-tools"
@@ -716,7 +733,7 @@ class DesktopAdapter:
         return list(dict.fromkeys(path for path in paths if path and _safe_socket(path)))
 
     async def _tool_rpc(self, path: str, method: str, params: dict, timeout: float = 15) -> dict:
-        reader, writer = await asyncio.open_unix_connection(path)
+        reader, writer = await _open_local_socket(path)
         try:
             payload = _json({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
             writer.write(struct.pack("<I", len(payload)) + payload)

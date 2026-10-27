@@ -33,3 +33,7 @@ pairing*.json
 admin-token
 本机管理链接.txt
 .DS_Store
+
+# Python package build outputs
+dist/
+*.egg-info/

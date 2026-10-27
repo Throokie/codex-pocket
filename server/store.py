@@ -3,13 +3,13 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import sqlite3
 import time
 import uuid
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from .private_files import require_posix, ensure_private_dir, create_private, read_private, check_private
 
 
 def digest(value):
@@ -24,18 +24,26 @@ class Fault(Exception):
 
 class Store:
     def __init__(self, directory, clock=time.time):
-        self.directory = Path(directory).resolve()
-        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self.directory, 0o700)
+        require_posix()
+        self.directory = ensure_private_dir(directory)
         self.clock = clock
         keyfile = self.directory / 'pair-envelope.key'
-        if not keyfile.exists():
-            fd = os.open(keyfile, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, 'wb') as f:
-                f.write(secrets.token_bytes(32))
-        self.cipher = AESGCM(keyfile.read_bytes())
-        self.db = sqlite3.connect(self.directory / 'pocket.sqlite3', isolation_level=None)
-        os.chmod(self.directory / 'pocket.sqlite3', 0o600)
+        try:
+            create_private(keyfile, secrets.token_bytes(32))
+        except FileExistsError:
+            pass
+        self.cipher = AESGCM(read_private(keyfile))
+        database = self.directory / 'pocket.sqlite3'
+        try:
+            create_private(database, b'')
+        except FileExistsError:
+            pass
+        check_private(database)
+        for suffix in ('-wal', '-shm'):
+            sidecar = Path(str(database) + suffix)
+            if sidecar.exists() or sidecar.is_symlink():
+                check_private(sidecar)
+        self.db = sqlite3.connect(database, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         self.db.executescript('''
             PRAGMA journal_mode=WAL;
@@ -57,6 +65,9 @@ class Store:
               id TEXT PRIMARY KEY,device_id TEXT NOT NULL,mime TEXT NOT NULL,
               size INTEGER NOT NULL,path TEXT NOT NULL,created_at REAL NOT NULL,used INTEGER DEFAULT 0);
         ''')
+        # SQLite derives sidecar permissions from the pre-created database (0600).
+        for suffix in ('', '-wal', '-shm'):
+            check_private(Path(str(database) + suffix))
         if 'config_id' not in {row['name'] for row in self.db.execute('PRAGMA table_info(pairings)')}:
             self.db.execute('ALTER TABLE pairings ADD COLUMN config_id TEXT')
         self.db.execute("UPDATE deliveries SET status='unknown' WHERE status='sending'")

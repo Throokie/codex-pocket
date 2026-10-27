@@ -14,6 +14,7 @@ import copy
 import json
 import re
 from dataclasses import dataclass, field
+from .platform_support import capabilities
 from typing import Awaitable, Callable
 
 COMMAND_TIMEOUT = 2.0
@@ -162,10 +163,12 @@ def parse_tailscale(value: object) -> tuple[list[dict], str | None, bool]:
 class AddressDiscovery:
     def __init__(self, tls_port: int = 32851,
                  runner: Callable[[tuple[str, ...]], Awaitable[bytes]] | None = None,
-                 clock: Callable[[], float] = time.monotonic, cache_ttl: float = 120):
+                 clock: Callable[[], float] = time.monotonic, cache_ttl: float = 120,
+                 platform: str | None = None):
         if type(tls_port) is not int or not 1 <= tls_port <= 65535:
             raise ValueError("invalid TLS port")
         self.tls_port, self.runner = tls_port, runner or run_local
+        self.platform = platform
         self._lock = asyncio.Lock()
         self._clock, self._cache_ttl = clock, min(300, max(0, cache_ttl))
         self._cache: dict[str, tuple[float, object]] = {}
@@ -184,9 +187,14 @@ class AddressDiscovery:
 
     async def snapshot(self) -> DiscoverySnapshot:
         async with self._lock:
-            (ip, ip_error), (ts, ts_error) = await asyncio.gather(
-                self._read(("ip", "-j", "address"), "本机局域网"),
-                self._read(("tailscale", "status", "--json", "--peers=false"), "Tailscale"))
+            if capabilities(self.platform)['lan_discovery'] == 'linux-ip':
+                (ip, ip_error), (ts, ts_error) = await asyncio.gather(
+                    self._read(("ip", "-j", "address"), "本机局域网"),
+                    self._read(("tailscale", "status", "--json", "--peers=false"), "Tailscale"))
+            else:
+                ip = None
+                ip_error = '本平台自动局域网发现尚在适配；可在电脑管理页手动添加线路。'
+                ts, ts_error = await self._read(("tailscale", "status", "--json", "--peers=false"), "Tailscale")
             diagnostics = [e for e in (ip_error, ts_error) if e]
             lan, tail, dns = [], [], None
             if ip is not None:

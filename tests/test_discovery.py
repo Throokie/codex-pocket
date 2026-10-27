@@ -53,7 +53,7 @@ def test_tailscale_only_self_running_and_real_tailnet_addresses():
 
 @pytest.mark.asyncio
 async def test_snapshot_priority_bound_no_peers_and_dedup():
-    snapper=d.AddressDiscovery(runner=runner([interface(addresses=tuple(f'10.1.1.{n}' for n in range(1,10)))],ts()))
+    snapper=d.AddressDiscovery(platform="linux",runner=runner([interface(addresses=tuple(f'10.1.1.{n}' for n in range(1,10)))],ts()))
     snap=await snapper.snapshot()
     assert len(snap.endpoints)==6
     assert snap.endpoints[0]['url']=='https://machine.tail123.ts.net:32851'
@@ -66,7 +66,7 @@ async def test_snapshot_priority_bound_no_peers_and_dedup():
 
 @pytest.mark.asyncio
 async def test_transient_failures_cache_then_expire_and_recover():
-    now=[0];snapper=d.AddressDiscovery(runner=runner([interface()],ts()),clock=lambda:now[0])
+    now=[0];snapper=d.AddressDiscovery(platform="linux",runner=runner([interface()],ts()),clock=lambda:now[0])
     first=await snapper.snapshot()
     snapper.runner=runner(d.DiscoveryCommandError('timeout'),d.DiscoveryCommandError('unavailable'))
     now[0]=20;cached=await snapper.snapshot()
@@ -80,7 +80,7 @@ async def test_transient_failures_cache_then_expire_and_recover():
 
 @pytest.mark.asyncio
 async def test_authoritative_empty_or_logout_withdraws_immediately():
-    snapper=d.AddressDiscovery(runner=runner([interface()],ts()))
+    snapper=d.AddressDiscovery(platform="linux",runner=runner([interface()],ts()))
     await snapper.snapshot();snapper.runner=runner([],{'BackendState':'Stopped'})
     snap=await snapper.snapshot()
     assert not snap.endpoints and not snap.addresses
@@ -89,7 +89,7 @@ async def test_authoritative_empty_or_logout_withdraws_immediately():
 @pytest.mark.asyncio
 async def test_command_failure_and_invalid_input_never_echo_sensitive_json():
     for bad in [b'not-json-SECRET',b'x'*(d.MAX_OUTPUT+1),d.DiscoveryCommandError('missing'),PermissionError('secret-error')]:
-        snap=await d.AddressDiscovery(runner=runner(bad,bad)).snapshot()
+        snap=await d.AddressDiscovery(platform="linux",runner=runner(bad,bad)).snapshot()
         assert not snap.endpoints and len(snap.diagnostics)==2
         assert 'SECRET' not in repr(snap) and 'secret-error' not in repr(snap)
 
@@ -98,7 +98,7 @@ async def test_command_failure_and_invalid_input_never_echo_sensitive_json():
 async def test_injected_runner_timeout_is_bounded(monkeypatch):
     monkeypatch.setattr(d,'COMMAND_TIMEOUT',.01)
     async def slow(argv):await asyncio.sleep(5)
-    snap=await d.AddressDiscovery(runner=slow).snapshot()
+    snap=await d.AddressDiscovery(platform="linux",runner=slow).snapshot()
     assert not snap.endpoints and all('超时' in x for x in snap.diagnostics)
 
 
@@ -192,6 +192,6 @@ async def test_tailscale_command_disables_peer_collection_at_source():
             assert argv==('tailscale','status','--json','--peers=false')
             return json.dumps(ts()).encode()
         return b'[]'
-    snapshot=await d.AddressDiscovery(runner=own_only).snapshot()
+    snapshot=await d.AddressDiscovery(platform="linux",runner=own_only).snapshot()
     assert snapshot.endpoints and len(calls)==2
     assert sum(argv[0]=='tailscale' for argv in calls)==1

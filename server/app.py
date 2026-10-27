@@ -1,4 +1,5 @@
 """Small authenticated HTTP bridge; desktop IPC is kept behind an adapter."""
+from .private_files import ensure_private_dir, replace_private, PrivatePathError
 import asyncio
 import base64
 import collections
@@ -19,6 +20,7 @@ from . import __version__
 from .store import Fault, Store
 from .network import ServerIdentity, endpoints, canonical_origin
 from .configlinks import ConfigLinks
+from .resources import admin_resource
 
 MAX_IMAGE = 15 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 40_000_000
@@ -81,7 +83,7 @@ class Hub:
         self.refresh_requested = False
         self.rate = collections.OrderedDict()
         self.media_dir = self.store.directory / 'media'
-        self.media_dir.mkdir(mode=0o700, exist_ok=True)
+        ensure_private_dir(self.media_dir)
         self.stopping = False
         self.last_adapter_error = None
         self.outbound_media_roots = []
@@ -210,8 +212,7 @@ class Hub:
             if len(data)>600000:
                 return None
             target = self.media_dir/(tid+'.jpg')
-            target.write_bytes(data)
-            os.chmod(target,0o600)
+            replace_private(target,data)
             self.store.db.execute('INSERT INTO media VALUES(?,?,?,?,?,?,1)',(tid,row['device_id'],'image/jpeg',len(data),str(target),time.time()))
             return tid
         except (OSError,ValueError):
@@ -234,8 +235,7 @@ class Hub:
             raw = path.read_bytes()
             safe, mime = sanitize_image(raw)
             target = self.media_dir / (mid + ('.jpg' if mime=='image/jpeg' else '.png'))
-            target.write_bytes(safe)
-            os.chmod(target, 0o600)
+            replace_private(target,safe)
             self.store.db.execute('INSERT INTO media VALUES(?,?,?,?,?,?,1)', (mid,'desktop',mime,len(safe),str(target),time.time()))
             return {'id':mid,'url':'/api/media/'+mid,'mime':mime,'thumbnail_id':self.ensure_thumbnail(mid)}
         except (OSError, ValueError, Fault):
@@ -284,6 +284,8 @@ async def errors(request, handler):
         return await handler(request)
     except Fault as exc:
         return js({'error':{'code':exc.code,'message':exc.message}}, exc.status)
+    except PrivatePathError:
+        return js({'error':{'code':'private_storage_unavailable','message':'私有存储权限异常，请在电脑检查数据目录'}},503)
     except web.HTTPException:
         raise
     except (asyncio.CancelledError, ConnectionResetError):
@@ -524,8 +526,7 @@ def create_app(hub, web_root=None, extra_origins=()):
             safe,mime = await asyncio.to_thread(sanitize_image,raw)
         mid = str(uuid.uuid4())
         target = hub.media_dir / (mid+('.jpg' if mime=='image/jpeg' else '.png'))
-        target.write_bytes(safe)
-        os.chmod(target,0o600)
+        replace_private(target,safe)
         hub.store.db.execute('INSERT INTO media VALUES(?,?,?,?,?,?,0)',(mid,device['id'],mime,len(safe),str(target),time.time()))
         return js({'id':mid,'mime':mime,'size':len(safe),'thumbnail_id':hub.ensure_thumbnail(mid)})
 
@@ -589,7 +590,7 @@ def create_admin_app(hub, admin_token):
         return await handler(request)
     app = web.Application(client_max_size=65536,middlewares=[errors,admin_auth])
     async def index(request):
-        return web.FileResponse(Path(__file__).parent/'admin.html',headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; frame-ancestors 'none'"})
+        return web.FileResponse(admin_resource(),headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY','Content-Security-Policy':"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; frame-ancestors 'none'"})
     async def status(request):
         return js({'pending':hub.store.pending_pairs(),'devices':hub.store.devices(),'state':{'controller':hub.state.get('controller'),'capabilities':hub.state.get('capabilities')},'name':hub.name,'server_identity':hub.identity.public(),'endpoints':hub.store.setting('network_endpoints',[]),'discovery':hub.discovery.status() if hub.discovery else {'enabled':False,'state':'unavailable','diagnostics':['自动发现未开启']},'config_link_enabled':hub.config_links.metadata()['enabled'],'config_link':hub.config_links.metadata(),'delivery':{'revision':hub.revision,'message_ids':[m.get('id') for m in hub.state.get('messages',[])],'subscribers':sum(len(qs) for qs in hub.watchers.values())},'manual_endpoints':hub.store.setting('manual_endpoints_v3',[e for e in hub.store.setting('network_endpoints',[]) if e.get('source')!='auto'])})
     async def config_link(request):

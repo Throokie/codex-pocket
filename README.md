@@ -15,6 +15,9 @@
 
 </div>
 
+> 本开发分支的电脑端安装候选为 **0.5.0rc1**；已发布 Android APK 仍为 **0.4.0**。Windows 当前只能安装与诊断，不能启动服务。
+
+
 ---
 
 ## 为什么做它
@@ -168,7 +171,7 @@ python3 scripts/pocket-adb.py --serial YOUR_DEVICE_SERIAL status
 
 使用前请读完这一节。
 
-- **平台**：目前仅支持 Android 和 Linux Codex 桌面。
+- **平台**：目前仅支持 Android 和 Linux Codex 桌面。0.5.0rc1 开发分支另有[电脑端可安装候选包](docs/INSTALLATION.md)；Windows 仅能安装与诊断，不能启动服务。安装与桌面连接能力分开见[平台状态](docs/PLATFORMS.md)。
 - **非官方协议**：依赖 Codex 桌面的内部 IPC，官方不保证其稳定，桌面更新后可能失效。
 - **桌面必须在线**：电脑需要保持运行和登录，使用的是你自己的 Codex 使用权限。
 - **推送**：不保证锁屏、Doze 或系统强杀进程之后仍能收到推送。
@@ -181,7 +184,7 @@ python3 scripts/pocket-adb.py --serial YOUR_DEVICE_SERIAL status
 
 | 范围 | 内容 |
 |---|---|
-| 自动化测试 | Python 95 项、Java 165 项，另含 10000 事件合并测试（本地运行；远端状态见上述 Actions） |
+| 自动化测试 | Python 95 项（0.4.0 记录；0.5.0rc1 开发分支见 CI）、Java 165 项，另含 10000 事件合并测试（远端状态见上述 Actions） |
 | 模拟器 | 最终 APK 在 API 33 AVD 上跑通 15 个导入、取消、迁移场景 |
 | 真机（0.4.0） | 一台 Android 16 设备覆盖安装后配对保留；关闭 Wi-Fi 后经蜂窝网络 + Tailscale 成功读取总控和聊天状态 |
 | 真机（早期版本） | 曾观察到桌面消息更新同步到手机；曾验证从手机发送的图片能被桌面聊天识别。0.4.0 尚未在同一条件下重测 |
@@ -218,3 +221,5 @@ App 不需要你另外配置一套模型 API。模型调用仍由你电脑上的
 Highlights: an inbox for command approvals (original request IDs) and native questions (original wording and options), one-time pairing confirmed on the desktop, per-device revocable authorization, tokens encrypted with an Android Keystore key, pinned TLS public key, and LAN/Tailscale route selection.
 
 **Status:** development preview. Android + Linux only. Relies on undocumented desktop IPC. See the Chinese sections above for setup commands and limitations.
+
+A 0.5.0rc1 installable Python package exists on a development branch; on Windows it installs and runs `doctor` only, and `serve` refuses to start. macOS desktop connection is implemented but unverified.
